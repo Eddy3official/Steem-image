@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto All-Time Candlestick Exporter</title>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-color: #ffffff;
+            --text-main: #0f172a;
+            --accent: #2563eb;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .controls-container {
+            background-color: var(--card-color);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 1200px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .selector-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        label {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        select {
+            padding: 10px 16px;
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background-color: var(--card-color);
+            cursor: pointer;
+            outline: none;
+            transition: border 0.2s ease;
+        }
+
+        select:focus {
+            border-color: var(--accent);
+        }
+
+        .btn-download {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-download:hover {
+            background-color: #1d4ed8;
+        }
+
+        .canvas-wrapper {
+            background-color: var(--card-color);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05);
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        canvas {
+            display: block;
+            background-color: #ffffff;
+        }
+
+        .status-msg {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls-container">
+        <div class="selector-group">
+            <label for="cryptoSelect">Select Asset Layer:</label>
+            <select id="cryptoSelect">
+                <option value="bitcoin">Bitcoin (BTCUSDT)</option>
+                <option value="ethereum">Ethereum (ETHUSDT)</option>
+                <option value="binancecoin">BNB (BNBUSDT)</option>
+                <option value="ripple">XRP (XRPUSDT)</option>
+                <option value="solana">Solana (SOLUSDT)</option>
+            </select>
+            <span id="statusLabel" class="status-msg">Initializing core canvas...</span>
+        </div>
+        
+        <button class="btn-download" id="downloadBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Export HD PNG
+        </button>
+    </div>
+
+    <div class="canvas-wrapper">
+        <!-- Rendered at native Full HD (1080p) Landscape 16:9 boundary -->
+        <canvas id="chartCanvas" width="1920" height="1080" style="width: 960px; height: 540px;"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('chartCanvas');
+        const ctx = canvas.getContext('2d');
+        const cryptoSelect = document.getElementById('cryptoSelect');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusLabel = document.getElementById('statusLabel');
+
+        // Dynamic State configurations 
+        let rawOhlcData = [];
+        const tickerMap = {
+            'bitcoin': 'BTCUSDT',
+            'ethereum': 'ETHUSDT',
+            'binancecoin': 'BNBUSDT',
+            'ripple': 'XRPUSDT',
+            'solana': 'SOLUSDT'
+        };
+
+        // Initialize and trigger dynamic layout download extraction loop
+        async function fetchChartData(coinId) {
+            statusLabel.textContent = "Querying historical ledger data arrays...";
+            try {
+                // Cascading to maximum timeframe macro breakdown to fetch structural candles
+                const response = await fetch(`https://coingecko.com{coinId}/ohlc?vs_currency=usd&days=max`);
+                if (!response.ok) throw new Error(`HTTP network error code status: ${response.status}`);
+                
+                rawOhlcData = await response.json();
+                statusLabel.textContent = `Successfully synchronized ${rawOhlcData.length} candle periods.`;
+                renderCandlestickMatrix(tickerMap[coinId]);
+            } catch (err) {
+                console.error(err);
+                statusLabel.textContent = "API network throttled. Retrying lookup...";
+            }
+        }
+
+        function renderCandlestickMatrix(tickerLabel) {
+            if (!rawOhlcData || rawOhlcData.length === 0) return;
+
+            // Clear framework drawing structures
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Establish responsive rendering dimensions
+            const paddingLeft = 120;
+            const paddingRight = 80;
+            const paddingTop = 120;
+            const paddingBottom = 140;
+
+            const chartWidth = canvas.width - paddingLeft - paddingRight;
+            const chartHeight = canvas.height - paddingTop - paddingBottom;
+
+            // Extract high/low spectrum criteria mapping
+            let minPrice = Infinity;
+            let maxPrice = -Infinity;
+
+            rawOhlcData.forEach(candle => {
+                // Schema array positions: [Timestamp, Open, High, Low, Close]
+                const [_, open, high, low, close] = candle;
+                if (low < minPrice) minPrice = low;
+                if (high > maxPrice) maxPrice = high;
+            });
+
+            // Introduce defensive spacing pads on Y boundaries
+            const priceDelta = maxPrice - minPrice;
+            maxPrice += priceDelta * 0.05;
+            minPrice -= priceDelta * 0.05;
+            if (minPrice < 0) minPrice = 0;
+
+            // Generate scale coefficients
+            const totalCandles = rawOhlcData.length;
+            const candleWidth = chartWidth / totalCandles;
+
+            // 1. Draw structured fine gridlines backplane
+            ctx.strokeStyle = "#f1f5f9";
+            ctx.lineWidth = 2;
+            const totalGridRows = 8;
+            
+            for (let i = 0; i <= totalGridRows; i++) {
+                const yPos = paddingTop + (chartHeight * i / totalGridRows);
+                ctx.beginPath();
+                ctx.moveTo(paddingLeft, yPos);
+                ctx.lineTo(canvas.width - paddingRight, yPos);
+                ctx.stroke();
+
+                // Draw detailed right-aligned numerical data indices
+                const underlyingPrice = maxPrice - ((maxPrice - minPrice) * i / totalGridRows);
+                ctx.fillStyle = "#64748b";
+                ctx.font = "bold 24px monospace";
+                ctx.textAlign = "right";
+                ctx.fillText(`$${underlyingPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, paddingLeft - 20, yPos + 8);
+            }
+
+            // 2. Map and parse elements onto target space
+            rawOhlcData.forEach((candle, idx) => {
+                const [time, open, high, low, close] = candle;
+
+                // Absolute transformation tracking loops
+                const x = paddingLeft + (idx * candleWidth) + (candleWidth / 2);
+                
+                const yOpen = paddingTop + chartHeight * (1 - (open - minPrice) / (maxPrice - minPrice));
+                const yHigh = paddingTop + chartHeight * (1 - (high - minPrice) / (maxPrice - minPrice));
+                const yLow = paddingTop + chartHeight * (1 - (low - minPrice) / (maxPrice - minPrice));
+                const yClose = paddingTop + chartHeight * (1 - (close - minPrice) / (maxPrice - minPrice));
+
+                const isBullish = close >= open;
+                const candleColor = isBullish ? "#10b981" : "#ef4444";
+
+                // Draw central candle wick
+                ctx.strokeStyle = candleColor;
+                ctx.lineWidth = Math.max(2, candleWidth * 0.15);
+                ctx.beginPath();
+                ctx.moveTo(x, yHigh);
+                ctx.lineTo(x, yLow);
+                ctx.stroke();
+
+                // Draw dynamic candle body bounding boxes
+                ctx.fillStyle = candleColor;
+                const bodyHeight = Math.abs(yClose - yOpen) || 2; // Safeguard minimal pixel view lines
+                const bodyTop = Math.min(yOpen, yClose);
+                const rectWidth = Math.max(3, candleWidth * 0.7);
+
+                ctx.fillRect(x - (rectWidth / 2), bodyTop, rectWidth, bodyHeight);
+            });
+
+            // 3. Render Top Metric Heading Layer
+            ctx.fillStyle = "#0f172a";
+            ctx.font = "bold 56px -apple-system, sans-serif";
+          
+            // Indent properly; set text alignment for title
+    ctx.textAlign = "left";
+    ctx.fillText(`${tickerLabel} All-Time History`, paddingLeft, paddingTop - 40);
+
+    // Fetch live endpoint state metadata to populate headers
+    const targetLastPrice = rawOhlcData[rawOhlcData.length - 1][4];
+    ctx.fillStyle = "#475569";
+    ctx.font = "500 32px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(`Latest Spot Index: $${targetLastPrice.toLocaleString()}`, canvas.width - paddingRight, paddingTop - 45);
+
+    // 4. PRESERVE BLOCKCHAIN BRANDING SIGNATURE (Bottom Left Area Context)
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 32px -apple-system, sans-serif";
+    ctx.textAlign = "left";
+    
+    // Placed beautifully with clear safety padding at the bottom corner edge
+    ctx.fillText("@blog.god on the Steem Blockchain", paddingLeft, canvas.height - 60);
+
+    // Draw crisp outer border frame overlay around visualization matrix
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(paddingLeft, paddingTop, chartWidth, chartHeight);
+}
+
+// Setup automated asset trigger actions
+cryptoSelect.addEventListener('change', (e) => {
+    fetchChartData(e.target.value);
+});
+
+// Trigger dynamic download handshake extraction pipeline
+downloadBtn.addEventListener('click', () => {
+    const currentTicker = tickerMap[cryptoSelect.value];
+    const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    
+    // Re-render immediately to verify matrix resolution clarity prior to download
+    renderCandlestickMatrix(currentTicker);
+    
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    const hiddenAnchor = document.createElement('a');
+    hiddenAnchor.download = `${currentTicker}_AllTime_HD_Chart_${dateStamp}.png`;
+    hiddenAnchor.href = dataUrl;
+    
+    document.body.appendChild(hiddenAnchor);
+    hiddenAnchor.click();
+    document.body.removeChild(hiddenAnchor);
+});
+
+// Bootstrap launch pipeline using primary selection index context
+fetchChartData(cryptoSelect.value);
+
