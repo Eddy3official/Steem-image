@@ -155,7 +155,7 @@
             statusLabel.textContent = "Querying historical ledger data arrays...";
             try {
                 // Cascading to maximum timeframe macro breakdown to fetch structural candles
-                const response = await fetch(`https://coingecko.com{coinId}/ohlc?vs_currency=usd&days=max`);
+                const response = await fetch(`https://api.coingecko.com/api/v3/simple/price`);
                 if (!response.ok) throw new Error(`HTTP network error code status: ${response.status}`);
                 
                 rawOhlcData = await response.json();
